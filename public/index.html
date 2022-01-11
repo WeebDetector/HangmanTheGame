@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<link rel="stylesheet" href="styles.css">
+
+<title>Hangman</title>
+
+<script>
+    var letterSequence = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P',
+                          'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L',
+                          'Z', 'X', 'C', 'V', 'B', 'N', 'M'];
+    let word;
+    let gameEnded = false;
+    let wordState = [];
+
+    window.onload = async function() {
+        if (sessionStorage.getItem("userId") == null) {         // Getting the unique user identifier from the server and storing it
+            const response = await fetch('/userConnected');     // in sessionStorage to maintain it even after page refresh
+            const json = await response.json();
+            sessionStorage.setItem("userId", json.uniqId);
+        }
+
+        for (var i = 0; i < letterSequence.length; i++) {       // Adding buttons to create QWERTY button layout
+            if (i <= 9) {
+                document.getElementById('row-1').innerHTML += '<button id=' + letterSequence[i] + ' class=buttonLett onclick=letterClicked(letterSequence['+ i + '])>' + letterSequence[i] + '</button></td>'
+            } else if (i > 9 && i <= 18) {
+                document.getElementById('row-2').innerHTML += '<button id=' + letterSequence[i] + ' class=buttonLett onclick=letterClicked(letterSequence['+ i + '])>' + letterSequence[i] + '</button></td>'
+            } else {
+                document.getElementById('row-3').innerHTML += '<button id=' + letterSequence[i] + ' class=buttonLett onclick=letterClicked(letterSequence['+ i + '])>' + letterSequence[i] + '</button></td>'
+            }
+        }
+
+        let userId = sessionStorage.getItem("userId");          // Fetching the word to guess from server
+        const data = { userId };
+        const options = {
+            method: 'POST',
+            headers: {
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify(data)
+        };
+        const response = await fetch('/generateWord', options);
+        const json = await response.json();
+        word = json.word;
+
+        document.getElementById('wordStateArea').cols = word.length * 2 - 1;
+        
+        for (let i = 0; i < word.length; i++) {
+            wordState[i] = '_';
+            document.getElementById('wordStateArea').textContent += '_ ';
+        }
+    }
+
+   async function letterClicked(letter) {                       // Function that triggers after a letter is clicked (a guess is made)
+        let correctGuesses;
+        let incorrectGuesses;
+        let userId = sessionStorage.getItem("userId");
+
+        const data = { letter, userId };                        // Sending the guessed letter over to the server, where it gets checked and the response is sent back
+        const options = {                                       // Together with the number of correct and incorrect guesses made
+            method: 'POST',
+            headers: {
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify(data)
+        };
+
+        const response = await fetch('/checkLetter', options);
+        const json = await response.json();
+        correctGuesses = json.correctGuesses;
+        incorrectGuesses = json.incorrectGuesses;
+
+        if (json.status == "Successful Guess") {                // If the guess that has been made is correct (the letter is in the word), reveal the letter in the word
+            document.getElementById('wordStateArea').textContent = '';
+            for (let i = 0; i < word.length; i++) {
+                if (word[i].toLowerCase() == letter.toLowerCase()) {
+                    wordState[i] = word[i].toUpperCase();
+                    document.getElementById('wordStateArea').textContent += word[i].toUpperCase() + ' ';
+                } else if (wordState[i] != '_') {
+                    document.getElementById('wordStateArea').textContent += word[i].toUpperCase() + ' ';
+                } else {
+                    document.getElementById('wordStateArea').textContent += '_ ';
+                }
+            }
+        } else {                                                // If the guess that has been made is incorrect - add another part of stickman
+            drawGraphics(incorrectGuesses);
+            document.getElementById('livesInfoArea').textContent = 'You have ' + (10 - incorrectGuesses) + ' lives';
+        }
+        document.getElementById('guessesArea').textContent += letter + " ";
+        document.getElementById(letter).disabled = true;
+        checkGameEndConditions(correctGuesses, incorrectGuesses);
+    }
+
+    function checkGameEndConditions(correctGuesses, incorrectGuesses) {         // Check whether any of the game ending conditions are met
+        if (correctGuesses == word.length || incorrectGuesses == 10) {          // If the conditions are met - disable all buttons and open up a pop-up window
+            gameEnded = true;
+            const btns = document.getElementsByTagName('button');
+            for (let i = 0; i < btns.length; i++) {
+                if (btns[i].id != 'CLOSE' && btns[i].id != 'AGAIN') {
+                    btns[i].disabled = true;
+                }
+            }
+            displayPopUp(correctGuesses, incorrectGuesses);
+        }
+    }
+
+    function displayPopUp(correctGuesses, incorrectGuesses) {                   // Displaying a pop-up window with a text and two buttons: "Play again" and "Close"
+        var popup = document.getElementById("popup");                           // If the player presses "Play again" reset everything and the game start all over again
+        popup.style.display = "block";                                          // If the player presses "Close" the pop-up closes
+        if (correctGuesses == word.length) {
+            document.getElementById('overInfo').textContent = "You win! Would you like to play again?";
+        } else if (incorrectGuesses == 10) {
+            document.getElementById('overInfo').textContent = "You lost. Would you like to try again?";
+        }
+        var btnAgain = document.getElementById("AGAIN");
+        var btnClose = document.getElementById("CLOSE");
+
+        btnAgain.onclick = async function() {
+            gameEnded = false;
+            wordState = [];
+            document.getElementById('wordStateArea').textContent = '';
+            document.getElementById('guessesArea').textContent = '';
+
+            let userId = sessionStorage.getItem("userId");
+            const data = { userId };
+            const options = {
+                method: 'POST',
+                headers: {
+                "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            };
+            const response = await fetch('/generateWord', options);
+            const json = await response.json();
+            word = json.word;
+
+            document.getElementById('wordStateArea').textContent = '';
+            document.getElementById('guessesArea').textContent = '';
+            document.getElementById('wordStateArea').cols = word.length * 2 - 1;
+            document.getElementById('livesInfoArea').textContent = 'You have 10 lives';
+            myStickman = document.getElementById("stickman");
+            context = myStickman.getContext('2d');
+            context.clearRect(0, 0, myStickman.width, myStickman.height);
+
+            for (let i = 0; i < word.length; i++) {
+                wordState[i] = '_';
+                document.getElementById('wordStateArea').textContent += '_ ';
+            }
+
+            const btns = document.getElementsByTagName('button');
+
+            for (let i = 0; i < btns.length; i++) {
+                btns[i].disabled = false;
+            }
+            popup.style.display = "none";
+        }
+        btnClose.onclick = function() {
+            popup.style.display = "none";
+        }
+    }
+
+    function drawGraphics(incorrectGuesses) {                   // Drawing stickman (canvas) stages depending on how many incorrect guesses have been made
+        myStickman = document.getElementById("stickman");
+        context = myStickman.getContext('2d');
+        context.beginPath();
+        if (incorrectGuesses == 1) {
+            context.moveTo(20, 250);
+            context.lineTo(200, 250);
+            context.stroke();
+        } else if (incorrectGuesses == 2) {
+            context.moveTo(35, 250);
+            context.lineTo(35, 50);
+            context.stroke();
+        } else if (incorrectGuesses == 3) {
+            context.moveTo(35, 50);
+            context.lineTo(125, 50);
+            context.stroke();
+        } else if (incorrectGuesses == 4) {
+            context.moveTo(115, 50);
+            context.lineTo(115, 65);
+            context.stroke();
+        } else if (incorrectGuesses == 5) {
+            context.beginPath();
+            context.arc(115, 80, 15, 0, 2 * Math.PI);
+            context.stroke();
+        } else if (incorrectGuesses == 6) {
+            context.moveTo(115, 95);
+            context.lineTo(115, 175);
+            context.stroke();
+        } else if (incorrectGuesses == 7) {
+            context.moveTo(115, 110);
+            context.lineTo(140, 145);
+            context.stroke();
+        } else if (incorrectGuesses == 8) {
+            context.moveTo(115, 110);
+            context.lineTo(90, 145);
+            context.stroke();
+        } else if (incorrectGuesses == 9) {
+            context.moveTo(115, 175);
+            context.lineTo(140, 225);
+            context.stroke();
+        } else if (incorrectGuesses == 10) {
+            context.moveTo(115, 175);
+            context.lineTo(90, 225);
+            context.stroke();
+        }
+    }
+
+
+
+
+</script>
+</head>
+
+<body>
+<div class="gameForm">
+    <div class="gamePicture">
+        <canvas id="stickman" height="300" width="400">Your Browser does NOT support HTML5 Canvas tag</canvas>
+        <textarea id="livesInfoArea" rows="1" cols="17" readonly>You have 10 lives</textarea> 
+    </div>
+
+    <div class="gameGuesses">
+        <div id="guessState">
+            <div id="wordLetters">
+                <textarea id="wordStateArea" rows="1" readonly></textarea>
+            </div><br>
+            <div id="pastGuesses">
+                <textarea id="guessesArea" rows="2" cols="17" readonly></textarea>
+            </div><br>
+        </div>
+
+        <div id="buttons" class="guessButtons">
+            <table id="buttonTable" class="guessButtonsTable">
+            <tr id="row-1"></tr>
+            <tr id="row-2"></tr>
+            <tr id="row-3"></tr>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<div id="popup" class="popup">
+    <div class="popup-content">
+        <h1 id="overInfo"></h1>
+        <button id="AGAIN">PLAY AGAIN</button>
+        <button id="CLOSE">CLOSE</button>
+    </div>
+</div>
+</body>
+
+</html>
